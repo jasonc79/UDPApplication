@@ -10,9 +10,10 @@ class Query:
     domain_name: str
     data: str
 class Dns:
-    def __init__(self, master_file: str):
-        self.master = self._load_accounts('master.txt')
-
+    def __init__(self):
+        self.master = self._load_dns()
+        self.lock = threading.Lock()
+    # Helper functions - Start
     def process_A_record(self, domain_name: str) -> list[Query]:
         # Finds every A record corresponding to the domain name
         response = []
@@ -34,8 +35,8 @@ class Dns:
     
     def process_NS_record(self, domain_name: str) -> list[Query]:
         # Finds every NS record corresponding to the domain name
-        ns_list = self.master['NS']
         response = []
+        ns_list = self.master['NS']
         for i in range(len(ns_list)):
             if (ns_list[i].domain_name == domain_name):
                 response.append(ns_list[i])
@@ -79,6 +80,8 @@ class Dns:
         response = f"AUTHORITY SECTION:\n"
         a_records = [] # List of a records - list[Query]
         ns_record = self.process_NS_record(authority)
+        if (ns_record == None):
+            return None
         for i in range(len(ns_record)):
             response += f"{authority}  NS  {ns_record[i].data}\n"
             a_record = self.process_A_record(ns_record[i].data)
@@ -90,6 +93,7 @@ class Dns:
             for i in range(len(a_records)):
                 response += f"{a_records[i].domain_name}  A  {a_records[i].data}\n"
         return response + "\n"
+    # Helper Functions - End
 
     def process_A_query(self, domain_name: str) -> str:
         a_record = self.process_A_record(domain_name)
@@ -152,22 +156,42 @@ class Dns:
         # If not, then send a referral
         return response + "\n"
     
+    def add_padding(self, response: str):
+        lines = response.split('\n')
+        width = 20
+        formatted_lines = []
+        for line in lines:
+            if (line.endswith(":")):
+                formatted_line = f'{line:<{width}}'
+            else:
+                components = line.split("  ")
+                if (len(components) == 2):
+                    formatted_line = f"{components[0]:<{width}} {components[1]:<{width}}"
+                elif (len(components) == 3):
+                    formatted_line = f"{components[0]:<{width}} {components[1]:<10} {components[2]:<{width}}"
+                else:
+                    # ID header
+                    formatted_line = f'{components[0]:<{width}}'
+            formatted_lines.append(formatted_line)
+        formatted_response = '\n'.join(formatted_lines)
+        return formatted_response
+    
     def process_query(self, domain_name: str, type: str, id: int) -> str:
         """Tie all the functions together to process any query"""
-        response = f"ID: {id}\n\nQUESTION SECTION:\n{domain_name}  {type}\n"
-        if type == 'A':
-            response += self.process_A_query(domain_name)
-        elif type == 'CNAME':
-            response += self.process_CNAME_query(domain_name)
-        elif type == 'NS':
-            response += self.process_NS_query(domain_name)
-            
+        with self.lock:
+            response = f"ID: {id}\n\nQUESTION SECTION:\n{domain_name}  {type}\n"
+            if type == 'A':
+                response += self.process_A_query(domain_name)
+            elif type == 'CNAME':
+                response += self.process_CNAME_query(domain_name)
+            elif type == 'NS':
+                response += self.process_NS_query(domain_name)
         # Process the query
         # Attempt to match the qname
         # If not matched, check CNAME, and change qname to the CNAME and start again
-        return response
+        return self.add_padding(response)
     
-    def _load_accounts(self, filename: str) -> dict[str, list[Query]]:
+    def _load_dns(self) -> dict[str, list[Query]]:
         """ Separate record types into a dictionary of lists (key: type ; value: Query(qname, data))
         Only accepts records of A, CNAME and NS as per specification
         """

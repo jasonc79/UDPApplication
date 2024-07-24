@@ -19,7 +19,7 @@ def main():
     except ValueError:
         sys.exit('Error: server_port must be an integer')
     
-    dns = Dns("master.txt")
+    dns = Dns()
     server = Server(server_port, dns)
     try:
         server.run()
@@ -65,7 +65,7 @@ class Server:
         response_time = datetime.datetime.now()
         delay = response_time.timestamp() - sent_time.timestamp()
         ip, port = addr
-        print(f'[{sent_time}] rcv {port}: {id} {domain_name} {type} (delay: {delay}s)')
+        print(f'[{sent_time}] rcv {port}: {id} {domain_name} {type} (delay: {delay:.0f}s)')
         print(f'[{response_time}] snd {port}: {id} {domain_name} {type}')
         self.sock.sendto(response.encode(), addr)
 
